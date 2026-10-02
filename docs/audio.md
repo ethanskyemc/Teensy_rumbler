@@ -11,7 +11,7 @@ Left is the siren speaker. Right is the Rumbler. Two playback styles need to be 
 1. A pre-rendered stereo WAV, with the Rumbler already in the right channel.
 2. A generated or processed right channel. Not in this phase.
 
-One `AudioPlaySdWav` plays at a time. A latched tone replaces the previous file. Air horn replaces it too, and release stops playback. The file is not resumed. A future mixer can layer the horn without changing the command path.
+One `AudioPlaySdWav` plays at a time. Wail, yelp, phaser, hi-lo, and piercer start the file again when it ends, so the tone holds until another sound, All Stop, or the failsafe. Meep meep, coin, 1-up, and Mario play once and then stop. Air horn replaces the current file too, and release stops playback. The previous file is not resumed. A future mixer can layer the horn without changing the command path.
 
 ## Rumbler mute
 

@@ -11,8 +11,7 @@ struct KeyEvent {
     bool pressed;
 };
 
-// What the LEDs are allowed to show. Playback fields come from Teensy
-// status. air_horn_held is the local finger state for the momentary key.
+// What the LEDs are allowed to show. Playback fields come from Teensy status.
 struct KeypadView {
     uint32_t now_ms;
     uint32_t startup_elapsed_ms;
@@ -20,8 +19,12 @@ struct KeypadView {
     bool link_up;
     bool playing;
     bool rumbler_enabled;
-    bool air_horn_held;
     siren::SoundID active_sound;
+    bool stop_pulse;
+    uint32_t stop_pulse_start_ms;
+    uint8_t volume_flash_count;
+    uint8_t volume_flash_button[2];
+    uint32_t volume_flash_start_ms[2];
 };
 
 void begin();

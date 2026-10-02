@@ -12,10 +12,31 @@ namespace {
 UiState state_ = {};
 uint32_t boot_ms_ = 0;
 uint32_t last_status_ms_ = 0;
-bool air_horn_held_ = false;
 // Boot default is rumbler off. Flips on each toggle so a press can be sent
 // before the first status packet. The screen still waits for that status.
 bool commanded_rumbler_ = false;
+bool stop_pulse_ = false;
+uint32_t stop_pulse_start_ms_ = 0;
+bool volume_flash_active_[2] = {};
+uint8_t volume_flash_button_[2] = {};
+uint32_t volume_flash_start_ms_[2] = {};
+
+void startVolumeFlash(uint8_t button, uint32_t now_ms) {
+    for (uint8_t i = 0; i < 2; ++i) {
+        if (volume_flash_active_[i] && volume_flash_button_[i] == button) {
+            volume_flash_start_ms_[i] = now_ms;
+            return;
+        }
+    }
+    for (uint8_t i = 0; i < 2; ++i) {
+        if (!volume_flash_active_[i]) {
+            volume_flash_active_[i] = true;
+            volume_flash_button_[i] = button;
+            volume_flash_start_ms_[i] = now_ms;
+            return;
+        }
+    }
+}
 
 void applyDefaults() {
     state_ = {};
@@ -37,8 +58,26 @@ keypad::KeypadView makeView(uint32_t now_ms) {
     view.link_up = state_.link_up;
     view.playing = state_.playing;
     view.rumbler_enabled = state_.rumbler_enabled;
-    view.air_horn_held = air_horn_held_;
     view.active_sound = state_.sound;
+    if (stop_pulse_ && siren::elapsedMs(now_ms, stop_pulse_start_ms_, cfg::kStopPulseMs)) {
+        stop_pulse_ = false;
+    }
+    view.stop_pulse = stop_pulse_;
+    view.stop_pulse_start_ms = stop_pulse_start_ms_;
+    view.volume_flash_count = 0;
+    for (uint8_t i = 0; i < 2; ++i) {
+        if (!volume_flash_active_[i]) {
+            continue;
+        }
+        if (siren::elapsedMs(now_ms, volume_flash_start_ms_[i], cfg::kVolumeFlashMs)) {
+            volume_flash_active_[i] = false;
+            continue;
+        }
+        const uint8_t slot = view.volume_flash_count;
+        view.volume_flash_button[slot] = volume_flash_button_[i];
+        view.volume_flash_start_ms[slot] = volume_flash_start_ms_[i];
+        view.volume_flash_count = static_cast<uint8_t>(slot + 1u);
+    }
     return view;
 }
 
@@ -64,10 +103,8 @@ void noteButton(const keypad::KeyEvent& event, uint32_t now_ms) {
     const cfg::ButtonBinding& binding = cfg::kButtonBindings[event.button];
     SIREN_LOG("ui: button %u %s\n", event.button, event.pressed ? "down" : "up");
 
-    // The horn key tracks the finger for a later LED. Nothing here marks a
-    // tone as playing; that bit comes only from Teensy status.
+    // Nothing here marks a tone as playing. That bit comes only from Teensy status.
     if (binding.action == cfg::ButtonAction::PLAY_MOMENTARY) {
-        air_horn_held_ = event.pressed;
         wireless::sendCommand(siren::makePlay(0, 0, binding.sound,
                                               event.pressed ? siren::CommandParam::PRESS
                                                             : siren::CommandParam::RELEASE));
@@ -79,10 +116,16 @@ void noteButton(const keypad::KeyEvent& event, uint32_t now_ms) {
 
     switch (binding.action) {
         case cfg::ButtonAction::PLAY_LATCHED:
+            if (statusFresh(now_ms) && state_.playing && state_.sound == binding.sound) {
+                wireless::sendCommand(siren::makeStop(0, 0));
+                break;
+            }
             wireless::sendCommand(
                 siren::makePlay(0, 0, binding.sound, siren::CommandParam::PRESS));
             break;
         case cfg::ButtonAction::ALL_STOP:
+            stop_pulse_ = true;
+            stop_pulse_start_ms_ = now_ms;
             wireless::sendCommand(siren::makeStop(0, 0));
             break;
         case cfg::ButtonAction::RUMBLER_TOGGLE:
@@ -91,6 +134,7 @@ void noteButton(const keypad::KeyEvent& event, uint32_t now_ms) {
             break;
         case cfg::ButtonAction::VOLUME_UP:
         case cfg::ButtonAction::VOLUME_DOWN:
+            startVolumeFlash(event.button, now_ms);
             if (!state_.volume_valid || !statusFresh(now_ms)) {
                 wireless::sendCommand(siren::makeRequestStatus(0, 0));
                 SIREN_LOG("ui: volume waiting for status\n");
@@ -142,8 +186,10 @@ void applyStatus(const siren::StatusPacket& status, uint32_t now_ms) {
 void begin() {
     boot_ms_ = millis();
     last_status_ms_ = 0;
-    air_horn_held_ = false;
     commanded_rumbler_ = false;
+    stop_pulse_ = false;
+    volume_flash_active_[0] = false;
+    volume_flash_active_[1] = false;
     applyDefaults();
     display::render(state_);
     keypad::setView(makeView(boot_ms_));

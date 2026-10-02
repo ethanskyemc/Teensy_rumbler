@@ -36,7 +36,7 @@ uint8_t led_frame_[72] = {};
 
 constexpr uint8_t kLedFrameBytes = 72;
 constexpr uint8_t kLedHeaderBytes = 4;
-constexpr uint8_t kLedBrightness = 15;  // 0.5 * 31, Pimoroni default
+constexpr uint8_t kLedBrightness = 31;  // 0.5 * 31, Pimoroni default
 
 void writeLeds(const uint8_t* frame) {
     digitalWrite(pins::kKeypadLedCs, LOW);
@@ -69,10 +69,40 @@ bool pushEvent(const KeyEvent& event) {
     return true;
 }
 
-bool buttonShowsLatchedSound(uint8_t index, const KeypadView& view) {
+bool buttonShowsPlayingSound(uint8_t index, const KeypadView& view) {
     const cfg::ButtonBinding& binding = cfg::kButtonBindings[index];
-    return view.playing && binding.action == cfg::ButtonAction::PLAY_LATCHED &&
-           binding.sound == view.active_sound;
+    if (!view.playing || binding.sound == siren::SoundID::NONE || binding.sound != view.active_sound) {
+        return false;
+    }
+    return binding.action == cfg::ButtonAction::PLAY_LATCHED ||
+           binding.action == cfg::ButtonAction::PLAY_MOMENTARY;
+}
+
+cfg::Rgb rainbow(uint32_t now_ms) {
+    constexpr uint8_t kLevel = 170;
+    const uint32_t step = (now_ms % cfg::kRainbowPeriodMs) * cfg::kRainbowSteps / cfg::kRainbowPeriodMs;
+    uint8_t pos = static_cast<uint8_t>((step * 256u) / cfg::kRainbowSteps);
+    pos = static_cast<uint8_t>(255u - pos);
+    uint8_t r = 0;
+    uint8_t g = 0;
+    uint8_t b = 0;
+    if (pos < 85) {
+        r = static_cast<uint8_t>(255u - pos * 3u);
+        b = static_cast<uint8_t>(pos * 3u);
+    } else if (pos < 170) {
+        pos = static_cast<uint8_t>(pos - 85u);
+        g = static_cast<uint8_t>(pos * 3u);
+        b = static_cast<uint8_t>(255u - pos * 3u);
+    } else {
+        pos = static_cast<uint8_t>(pos - 170u);
+        r = static_cast<uint8_t>(pos * 3u);
+        g = static_cast<uint8_t>(255u - pos * 3u);
+    }
+    return cfg::Rgb{
+        static_cast<uint8_t>((static_cast<uint16_t>(r) * kLevel) / 255u),
+        static_cast<uint8_t>((static_cast<uint16_t>(g) * kLevel) / 255u),
+        static_cast<uint8_t>((static_cast<uint16_t>(b) * kLevel) / 255u),
+    };
 }
 
 bool readButtons(uint16_t& bits) {
@@ -111,16 +141,108 @@ void emitStable(uint16_t bits) {
     published_ = bits;
 }
 
+cfg::Rgb restingColor(uint8_t index, const KeypadView& view) {
+    switch (cfg::kButtonBindings[index].action) {
+        case cfg::ButtonAction::PLAY_LATCHED:
+            return cfg::kRgbLatched;
+        case cfg::ButtonAction::PLAY_MOMENTARY:
+            return cfg::kRgbMomentary;
+        case cfg::ButtonAction::ALL_STOP:
+            return cfg::kRgbStop;
+        case cfg::ButtonAction::VOLUME_DOWN:
+        case cfg::ButtonAction::VOLUME_UP:
+            return cfg::kRgbVolume;
+        case cfg::ButtonAction::RUMBLER_TOGGLE:
+            return view.rumbler_enabled ? cfg::kRgbRumblerOn : cfg::kRgbRumblerOff;
+        case cfg::ButtonAction::RESERVED_PA:
+        case cfg::ButtonAction::NEXT_BANK:
+            return cfg::kRgbOff;
+    }
+    return cfg::kRgbOff;
+}
+
+uint8_t quantize(uint8_t level) {
+    return static_cast<uint8_t>((level / 16u) * 16u);
+}
+
+cfg::Rgb scale(cfg::Rgb color, uint8_t level) {
+    return cfg::Rgb{
+        static_cast<uint8_t>((static_cast<uint16_t>(color.r) * level) / 255u),
+        static_cast<uint8_t>((static_cast<uint16_t>(color.g) * level) / 255u),
+        static_cast<uint8_t>((static_cast<uint16_t>(color.b) * level) / 255u),
+    };
+}
+
+cfg::Rgb blend(cfg::Rgb from, cfg::Rgb to, uint8_t toward_to) {
+    const auto channel = [toward_to](uint8_t a, uint8_t b) {
+        return static_cast<uint8_t>(a + (static_cast<int16_t>(b) - static_cast<int16_t>(a)) * toward_to / 255);
+    };
+    return cfg::Rgb{channel(from.r, to.r), channel(from.g, to.g), channel(from.b, to.b)};
+}
+
+bool stopPulseOrder(uint8_t index, uint8_t& order) {
+    if (cfg::kButtonBindings[index].action == cfg::ButtonAction::ALL_STOP) {
+        return false;
+    }
+    order = 0;
+    for (uint8_t i = 0; i < index; ++i) {
+        if (cfg::kButtonBindings[i].action != cfg::ButtonAction::ALL_STOP) {
+            order = static_cast<uint8_t>(order + 1u);
+        }
+    }
+    return true;
+}
+
+bool stopPulseLevel(uint8_t index, const KeypadView& view, uint8_t& level) {
+    uint8_t order = 0;
+    if (!view.stop_pulse || !stopPulseOrder(index, order)) {
+        return false;
+    }
+    const uint32_t elapsed = view.now_ms - view.stop_pulse_start_ms;
+    const uint32_t center = static_cast<uint32_t>(order) * cfg::kStopPulseStepMs;
+    const uint32_t dist = elapsed > center ? elapsed - center : center - elapsed;
+    if (dist >= cfg::kStopPulseWidthMs) {
+        return false;
+    }
+    level = quantize(static_cast<uint8_t>(((cfg::kStopPulseWidthMs - dist) * 255u) / cfg::kStopPulseWidthMs));
+    return level != 0;
+}
+
+bool volumeFlashFade(uint8_t index, const KeypadView& view, uint8_t& toward_rest) {
+    for (uint8_t i = 0; i < view.volume_flash_count && i < 2; ++i) {
+        if (view.volume_flash_button[i] != index) {
+            continue;
+        }
+        const uint32_t elapsed = view.now_ms - view.volume_flash_start_ms[i];
+        if (elapsed >= cfg::kVolumeFlashMs) {
+            return false;
+        }
+        toward_rest = quantize(static_cast<uint8_t>((elapsed * 255u) / cfg::kVolumeFlashMs));
+        return true;
+    }
+    return false;
+}
+
 }  // namespace
 
 cfg::Rgb colorForButton(uint8_t index, const KeypadView& view) {
     if (index >= cfg::kButtonCount) {
-        return cfg::kRgbIdle;
+        return cfg::kRgbOff;
     }
 
     if (view.in_startup) {
         const uint8_t lit = static_cast<uint8_t>((view.startup_elapsed_ms / 50u) % cfg::kButtonCount);
-        return index == lit ? cfg::kRgbStartup : cfg::kRgbIdle;
+        return index == lit ? cfg::kRgbStartup : cfg::kRgbOff;
+    }
+
+    uint8_t level = 0;
+    if (stopPulseLevel(index, view, level)) {
+        return scale(cfg::kRgbStopPulse, level);
+    }
+
+    uint8_t toward_rest = 0;
+    if (volumeFlashFade(index, view, toward_rest)) {
+        return blend(cfg::kRgbVolumeFlash, cfg::kRgbVolume, toward_rest);
     }
 
     if (!view.link_up) {
@@ -128,17 +250,11 @@ cfg::Rgb colorForButton(uint8_t index, const KeypadView& view) {
         return bright ? cfg::kRgbLinkLostBright : cfg::kRgbLinkLostDim;
     }
 
-    const cfg::ButtonBinding& binding = cfg::kButtonBindings[index];
-    if (binding.action == cfg::ButtonAction::PLAY_MOMENTARY && view.air_horn_held) {
-        return cfg::kRgbAirHorn;
+    if (buttonShowsPlayingSound(index, view)) {
+        return rainbow(view.now_ms);
     }
-    if (binding.action == cfg::ButtonAction::RUMBLER_TOGGLE && view.rumbler_enabled) {
-        return cfg::kRgbRumblerOn;
-    }
-    if (buttonShowsLatchedSound(index, view)) {
-        return cfg::kRgbActive;
-    }
-    return cfg::kRgbIdle;
+
+    return restingColor(index, view);
 }
 
 void begin() {

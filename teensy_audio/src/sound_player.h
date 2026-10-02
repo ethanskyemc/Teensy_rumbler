@@ -7,7 +7,7 @@ namespace sound_player {
 void begin();
 void poll();
 void stop();
-bool open(siren::SoundID id);
+bool open(siren::SoundID id, bool announce = true);
 bool playing();
 siren::SoundID current();
 bool codecReady();

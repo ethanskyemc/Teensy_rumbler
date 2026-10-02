@@ -134,9 +134,16 @@ void poll() {
     if (!playing_ || !play_wav_.isStopped()) {
         return;
     }
+    const siren::SoundID ended = current_;
+    if (!siren::soundIsOneShot(ended) && !siren::soundIsMomentary(ended)) {
+        if (open(ended, false)) {
+            SIREN_LOG_VERBOSE("player: loop %s\n", siren::soundName(ended));
+            return;
+        }
+    }
     playing_ = false;
     current_ = siren::SoundID::NONE;
-    SIREN_LOG("player: file ended\n");
+    SIREN_LOG("player: file ended %s\n", siren::soundName(ended));
 }
 
 void stop() {
@@ -148,7 +155,7 @@ void stop() {
     current_ = siren::SoundID::NONE;
 }
 
-bool open(siren::SoundID id) {
+bool open(siren::SoundID id, bool announce) {
     const char* path = siren::soundFilename(id);
     if (path == nullptr) {
         SIREN_LOG("player: no file for sound %u\n", static_cast<unsigned>(id));
@@ -171,7 +178,9 @@ bool open(siren::SoundID id) {
     }
     playing_ = true;
     current_ = id;
-    SIREN_LOG("player: play %s\n", path);
+    if (announce) {
+        SIREN_LOG("player: play %s\n", path);
+    }
     return true;
 }
 

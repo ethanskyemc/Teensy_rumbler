@@ -21,6 +21,18 @@ constexpr uint32_t kStartupAnimMs = 800;
 constexpr uint32_t kLinkLostPeriodMs = 1000;
 constexpr uint32_t kLinkLostBrightMs = 180;
 
+// Hue cycle on the key whose sound the Teensy says is playing.
+constexpr uint32_t kRainbowPeriodMs = 1400;
+constexpr uint32_t kRainbowSteps = 28;
+
+// All Stop sends one red pulse across every other key, in keypad order.
+constexpr uint32_t kStopPulseStepMs = 48;
+constexpr uint32_t kStopPulseWidthMs = 110;
+constexpr uint32_t kStopPulseMs = (kButtonCount - 1) * kStopPulseStepMs + kStopPulseWidthMs;
+
+// Volume keys brighten, then fade back to their resting green.
+constexpr uint32_t kVolumeFlashMs = 320;
+
 // Receiver ESP32-C3 STA MAC. All zeros sends to the ESP-NOW broadcast address.
 constexpr uint8_t kPeerMac[6] = {0, 0, 0, 0, 0, 0};
 
@@ -78,9 +90,14 @@ struct Rgb {
     uint8_t b;
 };
 
-constexpr Rgb kRgbIdle = {0, 0, 12};
-constexpr Rgb kRgbActive = {0, 140, 32};
-constexpr Rgb kRgbAirHorn = {160, 110, 0};
+constexpr Rgb kRgbOff = {0, 0, 0};
+constexpr Rgb kRgbLatched = {0, 0, 12};
+constexpr Rgb kRgbMomentary = {36, 4, 24};
+constexpr Rgb kRgbStop = {36, 0, 0};
+constexpr Rgb kRgbStopPulse = {180, 0, 0};
+constexpr Rgb kRgbVolume = {0, 28, 0};
+constexpr Rgb kRgbVolumeFlash = {0, 160, 0};
+constexpr Rgb kRgbRumblerOff = {18, 4, 0};
 constexpr Rgb kRgbRumblerOn = {150, 36, 0};
 constexpr Rgb kRgbLinkLostDim = {28, 12, 0};
 constexpr Rgb kRgbLinkLostBright = {90, 36, 0};

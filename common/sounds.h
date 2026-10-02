@@ -7,10 +7,16 @@
 
 namespace siren {
 
-// Latched tones keep playing until another latched tone, ALL STOP, or a
-// failsafe stop replaces them. Momentary tones play only while held.
+// Siren tones repeat until another tone, ALL STOP, or a failsafe stop
+// replaces them. One-shot effects play the file once and then stop.
+// Momentary tones play only while held.
 inline bool soundIsMomentary(SoundID id) {
     return id == SoundID::AIR_HORN;
+}
+
+inline bool soundIsOneShot(SoundID id) {
+    return id == SoundID::CUSTOM_1 || id == SoundID::CUSTOM_2 || id == SoundID::CUSTOM_3 ||
+           id == SoundID::CUSTOM_4;
 }
 
 inline const char* soundName(SoundID id) {
@@ -30,13 +36,13 @@ inline const char* soundName(SoundID id) {
         case SoundID::AIR_HORN:
             return "AIRHORN";
         case SoundID::CUSTOM_1:
-            return "CUSTOM1";
+            return "MEEPMEP";
         case SoundID::CUSTOM_2:
-            return "CUSTOM2";
+            return "COIN";
         case SoundID::CUSTOM_3:
-            return "CUSTOM3";
+            return "1UP";
         case SoundID::CUSTOM_4:
-            return "CUSTOM4";
+            return "MARIO";
     }
     return "?";
 }
@@ -56,13 +62,13 @@ inline const char* soundFilename(SoundID id) {
         case SoundID::AIR_HORN:
             return "/AIRHORN.WAV";
         case SoundID::CUSTOM_1:
-            return "/CUSTOM1.WAV";
+            return "/MEEPMEP.WAV";
         case SoundID::CUSTOM_2:
-            return "/CUSTOM2.WAV";
+            return "/COIN.WAV";
         case SoundID::CUSTOM_3:
-            return "/CUSTOM3.WAV";
+            return "/1UP.WAV";
         case SoundID::CUSTOM_4:
-            return "/CUSTOM4.WAV";
+            return "/MARIO.WAV";
         case SoundID::NONE:
             return 0;
     }
