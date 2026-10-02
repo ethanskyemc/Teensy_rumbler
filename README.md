@@ -2,7 +2,7 @@
 
 Wireless controller for a siren speaker and a Federal Signal Rumbler. The remote is an ESP32-S3 with a keypad and a 1.91 inch AMOLED. An ESP32-C3 bridges ESP-NOW to a Teensy 4.0. The Teensy and an Audio Shield Rev D play audio into a TPA3255.
 
-Phases 2 and 3 are in the tree: keypad presses travel ESP-NOW to the C3, then UART to the Teensy, which prints them on USB serial. WAV playback, the LED strip, and the AMOLED are still off, so the outputs stay silent.
+Keypad presses travel ESP-NOW to the C3, then UART to the Teensy. A PLAY command opens a stereo WAV on the Audio Shield. The left line output is the siren. The right line output is the Rumbler, and its DAC stays muted until the Rumbler key enables it. The keypad LEDs and the AMOLED show Teensy-acknowledged state. Until status packets return, the screen stays on LINK DOWN and the keys pulse after a short startup chase.
 
 ```
 remote_s3/  ESP32-S3 UI
@@ -32,8 +32,8 @@ The remote is a Waveshare ESP32-S3-AMOLED-1.91 with 16 MB flash and 8 MB PSRAM. 
 - Each firmware runs that frame self-test once at boot.
 - The remote reads the keypad over I2C, debounces edges, and sends PLAY, STOP, volume, rumbler, and a 250 ms heartbeat. With `kPeerMac` all zeros it sends to the ESP-NOW broadcast address.
 - The C3 checks sequence and epoch, forwards the original frame on UART, and writes a failsafe STOP if heartbeats stop while a tone was commanded.
-- The Teensy parses Serial1 and prints accepted and rejected commands on USB serial. STOP is applied as silence. PLAY does not open a WAV yet.
-- Volume buttons send `REQUEST_STATUS` until a status packet exists. Status return, keypad LEDs, and the AMOLED are later phases.
+- The Teensy parses Serial1, prints the command, and plays `/WAIL.WAV` and the other names in `common/sounds.h`. STOP, a momentary release, a missing file, and a 1 second UART gap while audio is playing all go silent.
+- Volume buttons send `REQUEST_STATUS` until a status packet exists. The screen and the latched-siren LEDs follow that status, so they stay in the link-down pattern until phase 7. Battery stays `--`.
 - A queued ESP-NOW send is not a Teensy acknowledgement. The command is real when the Teensy log shows it.
 
 ## Hardware still needed

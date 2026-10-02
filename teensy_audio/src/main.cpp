@@ -18,7 +18,7 @@ void setup() {
     sd_audio::begin();
     audio_engine::begin();
     command_handler::begin();
-    SIREN_LOG("teensy: uart parser live, outputs silent\n");
+    SIREN_LOG("teensy: wav playback live, silent until a command\n");
 }
 
 void loop() {

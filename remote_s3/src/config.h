@@ -24,7 +24,7 @@ constexpr uint32_t kLinkLostBrightMs = 180;
 // Receiver ESP32-C3 STA MAC. All zeros sends to the ESP-NOW broadcast address.
 constexpr uint8_t kPeerMac[6] = {0, 0, 0, 0, 0, 0};
 
-// Keypad button scan. The LED strip stays off until its driver is written.
+// Keypad button scan. LED brightness is the Pimoroni half-scale default.
 constexpr uint32_t kButtonSampleMs = 10;
 constexpr uint32_t kButtonDebounceMs = 20;
 

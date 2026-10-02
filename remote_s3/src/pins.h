@@ -12,11 +12,6 @@
 
 namespace pins {
 
-// Button I2C is read by keypad.cpp. This flag still gates the LED strip.
-// The panel driver stays off as well.
-constexpr bool kKeypadDriverReady = false;
-constexpr bool kDisplayDriverReady = false;
-
 // Keypad buttons: I2C expander at 0x20, 400 kHz.
 // The library writes register 0, reads two bytes, and inverts them.
 // Pressed keys are 1. This bus is separate from the panel touch bus.
@@ -32,8 +27,9 @@ constexpr int kKeypadLedSck = 36;   // header 24, Pico GP18
 constexpr int kKeypadLedMosi = 37;  // header 25, Pico GP19
 constexpr uint32_t kKeypadSpiHz = 4000000;
 
-// AMOLED, QSPI, SH8601, 240 x 536. Confirmed by the Waveshare LVGL example
-// and the display-control table. There is no backlight GPIO; brightness is
+// AMOLED, QSPI, SH8601. The glass is sold as 240 x 536. Waveshare's init
+// (MADCTL 0xF0, columns 0..535, rows 0..239) addresses it as 536 x 240.
+// Drawing uses that window. There is no backlight GPIO; brightness is
 // SH8601 register 0x51. Reset is also header pin 35, which the keypad does
 // not use.
 constexpr int kDisplayCs = 6;
@@ -43,8 +39,9 @@ constexpr int kDisplayD1 = 7;
 constexpr int kDisplayD2 = 48;
 constexpr int kDisplayD3 = 5;
 constexpr int kDisplayRst = 17;
-constexpr int kDisplayWidth = 240;
-constexpr int kDisplayHeight = 536;
+constexpr int kDisplayWidth = 536;
+constexpr int kDisplayHeight = 240;
+constexpr uint8_t kDisplayBrightness = 0xC0;
 
 // FT3168 touch controller, address 0x38, on the board I2C with the QMI8658.
 // Header pins 29 and 27. Not used by the keypad.

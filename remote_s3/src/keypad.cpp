@@ -3,7 +3,9 @@
 #include "debug.h"
 #include "pins.h"
 
+#include <SPI.h>
 #include <Wire.h>
+#include <string.h>
 
 namespace keypad {
 namespace {
@@ -15,7 +17,6 @@ uint8_t queue_head_ = 0;
 uint8_t queue_count_ = 0;
 KeypadView view_ = {};
 bool view_set_ = false;
-bool logged_policy_ = false;
 bool logged_drop_ = false;
 bool i2c_fault_logged_ = false;
 bool i2c_started_ = false;
@@ -26,6 +27,36 @@ bool seeded_ = false;
 uint16_t published_ = 0;
 uint16_t candidate_ = 0;
 uint32_t candidate_ms_ = 0;
+
+// HSPI is SPI3 on the S3. The panel owns SPI2.
+SPIClass led_spi_(HSPI);
+bool leds_ready_ = false;
+bool led_frame_valid_ = false;
+uint8_t led_frame_[72] = {};
+
+constexpr uint8_t kLedFrameBytes = 72;
+constexpr uint8_t kLedHeaderBytes = 4;
+constexpr uint8_t kLedBrightness = 15;  // 0.5 * 31, Pimoroni default
+
+void writeLeds(const uint8_t* frame) {
+    digitalWrite(pins::kKeypadLedCs, LOW);
+    led_spi_.beginTransaction(SPISettings(pins::kKeypadSpiHz, MSBFIRST, SPI_MODE0));
+    led_spi_.writeBytes(frame, kLedFrameBytes);
+    led_spi_.endTransaction();
+    digitalWrite(pins::kKeypadLedCs, HIGH);
+}
+
+void startLeds() {
+    pinMode(pins::kKeypadLedCs, OUTPUT);
+    digitalWrite(pins::kKeypadLedCs, HIGH);
+    leds_ready_ = led_spi_.begin(pins::kKeypadLedSck, -1, pins::kKeypadLedMosi, -1);
+    if (!leds_ready_) {
+        SIREN_LOG("keypad: led spi begin failed\n");
+        return;
+    }
+    SIREN_LOG("keypad: leds spi3 sck=%d mosi=%d cs=%d\n", pins::kKeypadLedSck,
+              pins::kKeypadLedMosi, pins::kKeypadLedCs);
+}
 
 bool pushEvent(const KeyEvent& event) {
     if (queue_count_ >= kQueueCapacity) {
@@ -113,7 +144,6 @@ void begin() {
     queue_head_ = 0;
     queue_count_ = 0;
     view_set_ = false;
-    logged_policy_ = false;
     logged_drop_ = false;
     i2c_fault_logged_ = false;
     sample_started_ = false;
@@ -134,11 +164,12 @@ void begin() {
     i2c_started_ = Wire.begin(pins::kKeypadSda, pins::kKeypadScl);
     if (!i2c_started_) {
         SIREN_LOG("keypad: i2c begin failed\n");
-        return;
+    } else {
+        Wire.setClock(pins::kKeypadI2cHz);
+        SIREN_LOG("keypad: i2c sda=%d scl=%d addr=0x%02X\n", pins::kKeypadSda, pins::kKeypadScl,
+                  pins::kKeypadI2cAddress);
     }
-    Wire.setClock(pins::kKeypadI2cHz);
-    SIREN_LOG("keypad: i2c sda=%d scl=%d addr=0x%02X, leds off\n", pins::kKeypadSda,
-              pins::kKeypadScl, pins::kKeypadI2cAddress);
+    startLeds();
 }
 
 void poll(uint32_t now_ms) {
@@ -192,18 +223,25 @@ void setView(const KeypadView& view) {
 
 void render(uint32_t now_ms) {
     (void)now_ms;
-    if (!view_set_) {
+    if (!view_set_ || !leds_ready_) {
         return;
     }
-    if (!logged_policy_ && !view_.in_startup) {
-        logged_policy_ = true;
-        const cfg::Rgb color = colorForButton(0, view_);
-        SIREN_LOG("keypad: leds unwired, button0 rgb=%u,%u,%u\n", color.r, color.g, color.b);
+
+    uint8_t frame[kLedFrameBytes] = {};
+    for (uint8_t i = 0; i < cfg::kButtonCount; ++i) {
+        const cfg::Rgb color = colorForButton(i, view_);
+        uint8_t* pixel = frame + kLedHeaderBytes + (i * 4);
+        pixel[0] = static_cast<uint8_t>(0xE0 | kLedBrightness);
+        pixel[1] = color.b;
+        pixel[2] = color.g;
+        pixel[3] = color.r;
     }
-    if (!pins::kKeypadDriverReady) {
+    if (led_frame_valid_ && memcmp(led_frame_, frame, kLedFrameBytes) == 0) {
         return;
     }
-    // LED SPI stays off. colorForButton() is ready for the strip driver.
+    memcpy(led_frame_, frame, kLedFrameBytes);
+    led_frame_valid_ = true;
+    writeLeds(frame);
 }
 
 bool nextEvent(KeyEvent& out) {

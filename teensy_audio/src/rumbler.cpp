@@ -22,7 +22,7 @@ void setEnabled(bool enabled) {
         return;
     }
     enabled_ = enabled;
-    // Disabled mutes the right output later and leaves the left channel alone.
+    // Disabled mutes the right DAC. The left siren channel is not part of this flag.
     SIREN_LOG("rumbler: %s\n", enabled_ ? "enabled" : "disabled");
 }
 

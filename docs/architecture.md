@@ -44,7 +44,7 @@ Boot, reset, a malformed command, a stale sequence, and a missing WAV all leave 
 Two timers use the same 1 second limit:
 
 1. The C3 sends STOP if audio is active and no valid remote heartbeat has arrived for 1 second. The remote heartbeat period is 250 ms.
-2. The Teensy stops itself in `command_handler::poll` if the UART goes quiet for 1 second while the audio engine reports playback. Until a WAV is actually playing, that check has nothing to stop.
+2. The Teensy stops itself in `command_handler::poll` if the UART goes quiet for 1 second while a WAV is playing.
 
 ALL STOP wins over every other command once it is accepted. Acceptance still requires a valid frame, a locked epoch, and a newer sequence, so an old STOP or an old PLAY cannot be replayed into a new session.
 
@@ -61,9 +61,9 @@ A heartbeat is the only packet that may lock a remote epoch. PLAY before that he
 | 1 | Tree, shared protocol, docs, three projects that compile | Done |
 | 2 | C3 UART to Teensy, commands printed on Teensy USB serial | In this tree, not yet run on hardware |
 | 3 | ESP-NOW from keypad events through to the Teensy log | In this tree, not yet run on hardware |
-| 4 | SD WAV playback | Not started |
-| 5 | Stereo routing and independent Rumbler mute | Not started |
-| 6 | Keypad LEDs and AMOLED UI | Not started |
+| 4 | SD WAV playback | Playing on the siren speaker |
+| 5 | Stereo routing and independent Rumbler mute | In this tree |
+| 6 | Keypad LEDs and AMOLED UI | In this tree |
 | 7 | Status and acknowledgement both directions | Not started |
 | 8 | Diagnostics, banks, more sounds | Not started |
 
@@ -73,6 +73,6 @@ PA audio, microphone input, CAN, Wi-Fi networks, web servers, Bluetooth, and clo
 
 ## Libraries
 
-The firmware links the PlatformIO Arduino cores (ESP32 Arduino and Teensyduino). The keypad button expander is read over I2C. The LED SPI strip and the SH8601 panel are not started. Later audio phases use the PJRC Audio library and SD support that ship with Teensyduino.
+The firmware links the PlatformIO Arduino cores (ESP32 Arduino and Teensyduino). The keypad button expander is read over I2C. Keypad LEDs are an APA102/SK9822 frame on SPI3. The SH8601 panel is QSPI on SPI2, drawn from `UiState` only. WAV playback uses the PJRC Audio library and SD support that ship with Teensyduino.
 
 Debug logs are compiled in with `SIREN_DEBUG` in each `platformio.ini`. `SIREN_DEBUG_VERBOSE` stays off so heartbeats are not printed every 250 ms.

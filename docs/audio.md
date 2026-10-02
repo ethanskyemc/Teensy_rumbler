@@ -1,6 +1,6 @@
 # Audio
 
-The Teensy 4.0 and the Audio Shield Rev D own every sample. Phase 1 does not open the codec, the SD card, or a WAV file. The engine still has a place for each later piece so playback, the Rumbler mute, and a future synthesizer do not get mixed into the radio code.
+The Teensy 4.0 and the Audio Shield Rev D own every sample. A PLAY press opens one stereo WAV from the microSD card and sends it to the SGTL5000 line outputs. The headphone jack stays muted. Boot, a missing file, and ALL STOP leave both outputs silent.
 
 ## Format
 
@@ -11,15 +11,15 @@ Left is the siren speaker. Right is the Rumbler. Two playback styles need to be 
 1. A pre-rendered stereo WAV, with the Rumbler already in the right channel.
 2. A generated or processed right channel. Not in this phase.
 
-WAV playback is the only path that will be implemented first. The engine API is `requestPlay`, `stop`, and the three gain setters. `requestPlay` currently ignores the request and stays silent.
+One `AudioPlaySdWav` plays at a time. A latched tone replaces the previous file. Air horn replaces it too, and release stops playback. The file is not resumed. A future mixer can layer the horn without changing the command path.
 
 ## Rumbler mute
 
-Rumbler enable is independent of which WAV is open. Disabled means the right output is muted and the left output is left alone. The flag boots disabled. Enabling it before the codec is up only stores the flag.
+Rumbler enable is independent of which WAV is open and of the left-channel gain. Disabled mutes the SGTL5000 right DAC and zeros the right-channel samples. The left DAC mute bit is left clear. The flag boots disabled, so the Rumbler is muted before the first command. Toggling it does not restart the WAV.
 
 ## Gains
 
-Levels are application units, 0 to 100. Defaults, stored and not written to the codec:
+Levels are application units, 0 to 100. Channel gain is `(master * channel) / 100`, then divided by 100 again to reach the 0.0–1.0 audio-library gain. The codec line-out level stays at the library default, about 1.29 V peak-to-peak. Defaults:
 
 | Control | Default |
 | --- | --- |
@@ -27,8 +27,8 @@ Levels are application units, 0 to 100. Defaults, stored and not written to the 
 | Siren | 50 |
 | Rumbler | 30 |
 
-They are low on purpose because a TPA3255 follows the shield. The amplifier is wired to the line-out pads, so the codec path is the SGTL5000 line outputs. The headphone jack is unused. The gain curve is part of the playback phase.
+They are low on purpose because a TPA3255 follows the shield. Siren gain scales only the left output. Rumbler gain scales only the right output, and only while the Rumbler is enabled. With the defaults the siren is 15% of full scale. The amplifier is wired to the line-out pads.
 
 ## Failure
 
-A missing file, a failed SD mount, a bad command, and a link timeout do not start audio and do not reset the board. `sd_audio` reports `SdStatus::UNKNOWN` until mount is implemented. The boot status packet template is stopped, sound `NONE`, Teensy `BOOT`.
+A missing file, a failed SD mount, a bad command, and a link timeout do not start audio and do not reset the board. Mount failure is `SdStatus::MOUNT_FAILED`. A mounted card with a missing name stays `SdStatus::OK` and the player logs that name. While the codec is up, the status snapshot reports Teensy `READY`.

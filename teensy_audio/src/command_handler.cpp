@@ -27,9 +27,9 @@ void applyCommand(const siren::CommandPacket& cmd) {
                       cmd.epoch);
             break;
         case siren::CommandType::PLAY:
-            // Phase 4 starts the WAV here. The log is the phase 2/3 echo.
             SIREN_LOG("commands: PLAY %s %s seq=%u epoch=%u\n", siren::soundName(cmd.sound),
                       siren::paramName(cmd.param), cmd.sequence, cmd.epoch);
+            audio_engine::requestPlay(cmd.sound, cmd.param);
             break;
         case siren::CommandType::SET_VOLUME: {
             const uint8_t level = static_cast<uint8_t>(cmd.value);
@@ -123,8 +123,8 @@ void poll(uint32_t now_ms) {
         handleFrame(now_ms);
     }
 
-    // Defense in depth for a dead bridge. playing() stays false until WAV
-    // playback exists, so this does not fire on a silent bench.
+    // A dead bridge must not leave a siren running. Heartbeats refresh
+    // last_rx_ms_; this fires only while a WAV is actually playing.
     if (audio_engine::playing() && last_rx_ms_ != 0 &&
         siren::elapsedMs(now_ms, last_rx_ms_, siren::kLinkTimeoutMs)) {
         audio_engine::stop();
@@ -146,6 +146,9 @@ bool fillStatus(siren::StatusPacket& out) {
     out.teensy = audio_engine::deviceStatus();
     out.sd = sd_audio::status();
     out.flags = 0;
+    if (out.teensy == siren::TeensyStatus::READY) {
+        out.flags = static_cast<uint8_t>(out.flags | siren::STATUS_FLAG_AUDIO_READY);
+    }
     out.remote_epoch = 0;
     out.ack_sequence = 0;
     out.status_sequence = status_sequence_;

@@ -19,7 +19,7 @@ void setup() {
     display::begin();
     wireless::begin();
     ui::begin();
-    SIREN_LOG("remote: keypad and radio live, leds and panel off\n");
+    SIREN_LOG("remote: keypad, leds, and panel live\n");
 }
 
 void loop() {

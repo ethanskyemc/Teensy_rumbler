@@ -9,7 +9,7 @@ namespace audio_engine {
 void begin();
 void update(uint32_t now_ms);
 
-// Control requests. Phase 1 keeps the outputs silent and does not touch I2S.
+// Control requests. Samples are generated in the audio library interrupt.
 void requestPlay(siren::SoundID id, siren::CommandParam edge);
 void stop();
 void setMasterVolume(uint8_t volume);
