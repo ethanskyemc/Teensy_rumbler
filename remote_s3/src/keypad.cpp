@@ -56,6 +56,7 @@ void startLeds() {
     }
     SIREN_LOG("keypad: leds spi3 sck=%d mosi=%d cs=%d\n", pins::kKeypadLedSck,
               pins::kKeypadLedMosi, pins::kKeypadLedCs);
+    Serial.flush();
 }
 
 bool pushEvent(const KeyEvent& event) {

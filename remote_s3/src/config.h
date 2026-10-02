@@ -46,31 +46,31 @@ struct ButtonBinding {
 
 // Keypad index matches the Pimoroni RGB Keypad legend: 0-9 then A-F.
 constexpr ButtonBinding kButtonBindings[kButtonCount] = {
-    {ButtonAction::PLAY_LATCHED, siren::SoundID::WAIL},          // 0
-    {ButtonAction::PLAY_LATCHED, siren::SoundID::YELP},          // 1
-    {ButtonAction::PLAY_LATCHED, siren::SoundID::PHASER},        // 2
-    {ButtonAction::PLAY_LATCHED, siren::SoundID::HI_LO},         // 3
-    {ButtonAction::PLAY_LATCHED, siren::SoundID::PIERCER},       // 4
-    {ButtonAction::PLAY_MOMENTARY, siren::SoundID::AIR_HORN},    // 5
-    {ButtonAction::PLAY_LATCHED, siren::SoundID::CUSTOM_1},      // 6
-    {ButtonAction::PLAY_LATCHED, siren::SoundID::CUSTOM_2},      // 7
-    {ButtonAction::VOLUME_DOWN, siren::SoundID::NONE},           // 8
-    {ButtonAction::VOLUME_UP, siren::SoundID::NONE},             // 9
-    {ButtonAction::RUMBLER_TOGGLE, siren::SoundID::NONE},        // A
-    {ButtonAction::NEXT_BANK, siren::SoundID::NONE},             // B
-    {ButtonAction::RESERVED_PA, siren::SoundID::NONE},           // C
-    {ButtonAction::PLAY_LATCHED, siren::SoundID::CUSTOM_3},      // D
-    {ButtonAction::PLAY_LATCHED, siren::SoundID::CUSTOM_4},      // E
-    {ButtonAction::ALL_STOP, siren::SoundID::NONE},              // F
+    {ButtonAction::PLAY_MOMENTARY, siren::SoundID::AIR_HORN},  // 0
+    {ButtonAction::PLAY_LATCHED, siren::SoundID::WAIL},        // 1
+    {ButtonAction::PLAY_LATCHED, siren::SoundID::YELP},        // 2
+    {ButtonAction::PLAY_LATCHED, siren::SoundID::PHASER},      // 3
+    {ButtonAction::PLAY_LATCHED, siren::SoundID::HI_LO},       // 4
+    {ButtonAction::PLAY_LATCHED, siren::SoundID::PIERCER},     // 5
+    {ButtonAction::PLAY_LATCHED, siren::SoundID::CUSTOM_1},    // 6
+    {ButtonAction::PLAY_LATCHED, siren::SoundID::CUSTOM_2},    // 7
+    {ButtonAction::PLAY_LATCHED, siren::SoundID::CUSTOM_3},    // 8
+    {ButtonAction::PLAY_LATCHED, siren::SoundID::CUSTOM_4},    // 9
+    {ButtonAction::RESERVED_PA, siren::SoundID::NONE},         // A
+    {ButtonAction::ALL_STOP, siren::SoundID::NONE},            // B
+    {ButtonAction::RUMBLER_TOGGLE, siren::SoundID::NONE},      // C
+    {ButtonAction::VOLUME_DOWN, siren::SoundID::NONE},         // D
+    {ButtonAction::VOLUME_UP, siren::SoundID::NONE},           // E
+    {ButtonAction::NEXT_BANK, siren::SoundID::NONE},           // F
 };
 
-static_assert(kButtonBindings[0].sound == siren::SoundID::WAIL, "button 0");
-static_assert(kButtonBindings[2].sound == siren::SoundID::PHASER, "button 2");
-static_assert(kButtonBindings[3].sound == siren::SoundID::HI_LO, "button 3");
-static_assert(kButtonBindings[5].action == ButtonAction::PLAY_MOMENTARY, "air horn");
-static_assert(kButtonBindings[10].action == ButtonAction::RUMBLER_TOGGLE, "rumbler");
-static_assert(kButtonBindings[12].action == ButtonAction::RESERVED_PA, "pa");
-static_assert(kButtonBindings[15].action == ButtonAction::ALL_STOP, "all stop");
+static_assert(kButtonBindings[0].action == ButtonAction::PLAY_MOMENTARY, "air horn");
+static_assert(kButtonBindings[1].sound == siren::SoundID::WAIL, "button 1");
+static_assert(kButtonBindings[4].sound == siren::SoundID::HI_LO, "button 4");
+static_assert(kButtonBindings[10].action == ButtonAction::RESERVED_PA, "pa");
+static_assert(kButtonBindings[11].action == ButtonAction::ALL_STOP, "all stop");
+static_assert(kButtonBindings[12].action == ButtonAction::RUMBLER_TOGGLE, "rumbler");
+static_assert(kButtonBindings[15].action == ButtonAction::NEXT_BANK, "next bank");
 
 struct Rgb {
     uint8_t r;

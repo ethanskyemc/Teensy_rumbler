@@ -45,6 +45,8 @@ uint32_t held_since_ms_ = 0;
 
 uint8_t last_src_[6] = {};
 bool have_src_ = false;
+bool return_peer_ready_ = false;
+bool status_forward_logged_ = false;
 uint32_t last_bad_log_ms_ = 0;
 
 void onRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
@@ -229,6 +231,44 @@ void noteSource(const RadioSlot& slot) {
     logMac("espnow: remote mac", last_src_);
 }
 
+bool addPeer(const uint8_t mac[6]);
+
+void sendStatus(const uint8_t* frame, size_t len) {
+    const uint8_t* dest = nullptr;
+    if (!siren::macIsUnset(cfg::kPeerMac)) {
+        dest = cfg::kPeerMac;
+    } else if (have_src_) {
+        dest = last_src_;
+    } else {
+        return;
+    }
+    if (!return_peer_ready_) {
+        if (!addPeer(dest)) {
+            SIREN_LOG("espnow: status peer add failed\n");
+            return;
+        }
+        return_peer_ready_ = true;
+    }
+    if (esp_now_send(dest, frame, len) != ESP_OK) {
+        SIREN_LOG_VERBOSE("espnow: status send failed\n");
+        return;
+    }
+    if (!status_forward_logged_) {
+        status_forward_logged_ = true;
+        SIREN_LOG("espnow: forwarding status to remote\n");
+        return;
+    }
+    SIREN_LOG_VERBOSE("espnow: status forwarded\n");
+}
+
+void forwardQueuedStatus() {
+    uint8_t frame[siren::kMaxFrameBytes];
+    size_t len = 0;
+    while (uart_bridge::takeFrame(frame, sizeof(frame), len)) {
+        sendStatus(frame, len);
+    }
+}
+
 void pollFailsafe(uint32_t now_ms) {
     if (!audio_active_ || last_heartbeat_ms_ == 0 || failsafe_latched_) {
         return;
@@ -276,6 +316,8 @@ void begin() {
     held_ = false;
     held_len_ = 0;
     have_src_ = false;
+    return_peer_ready_ = false;
+    status_forward_logged_ = false;
     last_bad_log_ms_ = 0;
 
     WiFi.mode(WIFI_STA);
@@ -290,8 +332,11 @@ void begin() {
     radio_ready_ = true;
 
     uint8_t own_mac[6] = {};
-    WiFi.macAddress(own_mac);
-    logMac("espnow: local mac", own_mac);
+    if (esp_wifi_get_mac(WIFI_IF_STA, own_mac) != ESP_OK) {
+        SIREN_LOG("espnow: sta mac read failed\n");
+    } else {
+        logMac("espnow: local mac", own_mac);
+    }
     SIREN_LOG("espnow: channel=%u timeout=%u ms\n", siren::kEspNowChannel, siren::kLinkTimeoutMs);
 
     radio_queue_ = xQueueCreate(kRadioDepth, sizeof(RadioSlot));
@@ -312,6 +357,7 @@ void begin() {
         SIREN_LOG("espnow: peer add failed\n");
         return;
     }
+    return_peer_ready_ = true;
     logMac("espnow: peer", cfg::kPeerMac);
 }
 
@@ -319,6 +365,7 @@ void poll(uint32_t now_ms) {
     if (!radio_ready_) {
         return;
     }
+    forwardQueuedStatus();
     const uint32_t drops = radio_drops_;
     if (drops != logged_drops_ &&
         (last_bad_log_ms_ == 0 || siren::elapsedMs(now_ms, last_bad_log_ms_, 1000))) {

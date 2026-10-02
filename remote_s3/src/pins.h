@@ -21,7 +21,9 @@ constexpr uint8_t kKeypadI2cAddress = 0x20;
 constexpr uint32_t kKeypadI2cHz = 400000;
 
 // Keypad LEDs: SPI, APA102/SK9822 frame layout, 4 MHz in the Pico library.
-// CS is driven around the transfer. Use a different SPI host from the panel.
+// CS is driven around the transfer. SPI3, not the panel's SPI2.
+// These GPIOs are also the octal PSRAM data pins. Octal PSRAM stays off
+// so the LED bus can use them. See the remote platformio.ini.
 constexpr int kKeypadLedCs = 35;    // header 22, Pico GP17
 constexpr int kKeypadLedSck = 36;   // header 24, Pico GP18
 constexpr int kKeypadLedMosi = 37;  // header 25, Pico GP19

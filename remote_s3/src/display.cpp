@@ -7,6 +7,7 @@
 
 #include "esp_cache.h"
 #include "esp_heap_caps.h"
+#include "esp_memory_utils.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
@@ -23,7 +24,11 @@ bool flush_timeout_logged_ = false;
 
 esp_lcd_panel_handle_t panel_ = nullptr;
 SemaphoreHandle_t flush_done_ = nullptr;
-uint16_t* fb_ = nullptr;
+// One strip of the panel. The full frame is 257 KB, which does not fit in
+// internal RAM, and the octal PSRAM pins are the keypad LED bus.
+constexpr int kStripRows = 24;
+int strip_y_ = 0;
+uint16_t* strip_ = nullptr;
 
 extern "C" bool onColorDone(esp_lcd_panel_io_handle_t panel_io,
                             esp_lcd_panel_io_event_data_t* edata, void* user_ctx) {
@@ -39,13 +44,13 @@ extern "C" bool onColorDone(esp_lcd_panel_io_handle_t panel_io,
 
 constexpr int kWidth = pins::kDisplayWidth;
 constexpr int kHeight = pins::kDisplayHeight;
-constexpr size_t kPixels = static_cast<size_t>(kWidth) * static_cast<size_t>(kHeight);
+constexpr size_t kStripPixels = static_cast<size_t>(kWidth) * kStripRows;
 
 constexpr uint16_t rgb565(uint8_t r, uint8_t g, uint8_t b) {
     return static_cast<uint16_t>(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
 }
 
-constexpr uint16_t kBg = rgb565(6, 10, 18);
+constexpr uint16_t kBg = 0x0000;
 constexpr uint16_t kLabel = rgb565(140, 150, 160);
 constexpr uint16_t kValue = rgb565(235, 240, 245);
 constexpr uint16_t kLinkDown = rgb565(220, 90, 20);
@@ -125,12 +130,20 @@ void pixel(int x, int y, uint16_t color) {
     if (x < 0 || y < 0 || x >= kWidth || y >= kHeight) {
         return;
     }
-    fb_[static_cast<size_t>(y) * static_cast<size_t>(kWidth) + static_cast<size_t>(x)] = color;
+    // 180 degrees in the existing 536x240 window. The panel scan stays as
+    // Waveshare set it; only the pixels we draw move.
+    const int px = kWidth - 1 - x;
+    const int py = kHeight - 1 - y;
+    if (py < strip_y_ || py >= strip_y_ + kStripRows) {
+        return;
+    }
+    strip_[static_cast<size_t>(py - strip_y_) * static_cast<size_t>(kWidth) + static_cast<size_t>(px)] =
+        color;
 }
 
 void fill(uint16_t color) {
-    for (size_t i = 0; i < kPixels; ++i) {
-        fb_[i] = color;
+    for (size_t i = 0; i < kStripPixels; ++i) {
+        strip_[i] = color;
     }
 }
 
@@ -246,15 +259,19 @@ void paint(const UiState& state) {
     text(x + 140, y, value, kValue, kScale);
 }
 
-bool flush() {
-    const esp_err_t synced = esp_cache_msync(
-        fb_, kPixels * sizeof(uint16_t),
-        ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
-    if (synced != ESP_OK) {
-        SIREN_LOG("display: cache sync failed\n");
+bool flushStrip() {
+    // Internal RAM is not on the data cache. msync rejects that address.
+    // DMA reads the same bytes the CPU just wrote.
+    if (esp_ptr_external_ram(strip_)) {
+        const esp_err_t synced = esp_cache_msync(
+            strip_, kStripPixels * sizeof(uint16_t),
+            ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
+        if (synced != ESP_OK) {
+            SIREN_LOG("display: cache sync failed\n");
+        }
     }
-    const esp_err_t drawn =
-        esp_lcd_panel_draw_bitmap(panel_, 0, 0, kWidth, kHeight, fb_);
+    const esp_err_t drawn = esp_lcd_panel_draw_bitmap(panel_, 0, strip_y_, kWidth,
+                                                      strip_y_ + kStripRows, strip_);
     if (drawn != ESP_OK) {
         SIREN_LOG("display: draw failed\n");
         return false;
@@ -275,11 +292,12 @@ void begin() {
     have_last_ = false;
     ready_ = false;
 
-    const size_t bytes = kPixels * sizeof(uint16_t);
-    fb_ = static_cast<uint16_t*>(
-        heap_caps_aligned_alloc(64, bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-    if (fb_ == nullptr) {
-        SIREN_LOG("display: framebuffer alloc failed\n");
+    const size_t bytes = kStripPixels * sizeof(uint16_t);
+    strip_ = static_cast<uint16_t*>(
+        heap_caps_aligned_alloc(64, bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA | MALLOC_CAP_8BIT));
+    if (strip_ == nullptr) {
+        SIREN_LOG("display: strip alloc failed\n");
+        Serial.flush();
         return;
     }
 
@@ -363,6 +381,7 @@ void begin() {
 
     ready_ = true;
     SIREN_LOG("display: SH8601 %dx%d brightness=%u\n", kWidth, kHeight, pins::kDisplayBrightness);
+    Serial.flush();
 }
 
 void render(const UiState& state) {
@@ -379,8 +398,13 @@ void render(const UiState& state) {
     if (!ready_) {
         return;
     }
-    paint(state);
-    flush();
+    for (int y = 0; y < kHeight; y += kStripRows) {
+        strip_y_ = y;
+        paint(state);
+        if (!flushStrip()) {
+            break;
+        }
+    }
 }
 
 }  // namespace display

@@ -23,7 +23,7 @@ Status travels the reverse path: Teensy, UART, C3, ESP-NOW, remote. The screen a
 | ESP32-C3 bridge | ESP-NOW validate/forward, UART framing, heartbeat timeout, failsafe STOP | Audio synthesis, SD, a second copy of the mixer |
 | Teensy 4.0 | SD, WAV playback, master/siren/Rumbler gains, right-channel mute, local silence if UART dies | Keypad, display, ESP-NOW |
 
-The C3 keeps one failsafe hint, set when it forwards a PLAY press and cleared when it forwards STOP or a momentary release. That bit exists so a lost heartbeat can force STOP. It is not an audio engine. Phase 7 status will replace the hint.
+The C3 keeps one failsafe hint, set when it forwards a PLAY press and cleared when it forwards STOP or a momentary release. That bit exists so a lost heartbeat can force STOP. It is not an audio engine. Status frames travel back unchanged so the remote can show what the Teensy reported.
 
 ## Software layout
 
@@ -64,7 +64,7 @@ A heartbeat is the only packet that may lock a remote epoch. PLAY before that he
 | 4 | SD WAV playback | Playing on the siren speaker |
 | 5 | Stereo routing and independent Rumbler mute | In this tree |
 | 6 | Keypad LEDs and AMOLED UI | In this tree |
-| 7 | Status and acknowledgement both directions | Not started |
+| 7 | Status and acknowledgement both directions | In this tree |
 | 8 | Diagnostics, banks, more sounds | Not started |
 
 ## Out of scope
@@ -73,6 +73,6 @@ PA audio, microphone input, CAN, Wi-Fi networks, web servers, Bluetooth, and clo
 
 ## Libraries
 
-The firmware links the PlatformIO Arduino cores (ESP32 Arduino and Teensyduino). The keypad button expander is read over I2C. Keypad LEDs are an APA102/SK9822 frame on SPI3. The SH8601 panel is QSPI on SPI2, drawn from `UiState` only. WAV playback uses the PJRC Audio library and SD support that ship with Teensyduino.
+The firmware links the PlatformIO Arduino cores (ESP32 Arduino and Teensyduino). The keypad button expander is read over I2C. Keypad LEDs are an APA102/SK9822 frame on SPI3. Those pins are the octal PSRAM bus, so the remote leaves the 8 MB PSRAM off. The SH8601 panel is QSPI on SPI2 and is drawn from `UiState` in internal-RAM strips. WAV playback uses the PJRC Audio library and SD support that ship with Teensyduino.
 
 Debug logs are compiled in with `SIREN_DEBUG` in each `platformio.ini`. `SIREN_DEBUG_VERBOSE` stays off so heartbeats are not printed every 250 ms.

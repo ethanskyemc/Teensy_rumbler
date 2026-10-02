@@ -84,7 +84,7 @@ Brightness is SH8601 register `0x51`, not a GPIO. Reset is also broken out on he
 
 Touch is an FT3168 at I2C address `0x38` on GPIO40 (SDA) and GPIO39 (SCL), shared with the onboard QMI8658. That is the board's I2C bus, not the keypad bus. Battery sense is GPIO1 on header pin 5.
 
-The keypad button bus (GPIO2/GPIO3) is initialized. LED frames go out SPI3 (HSPI) at 4 MHz, chip-select GPIO35. The panel is SH8601 QSPI on SPI2, addressed as 536 by 240. Brightness is register `0x51` at `kDisplayBrightness`. Touch is not started. Battery GPIO1 is not converted to a percentage.
+The keypad button bus (GPIO2/GPIO3) is initialized. LED frames go out SPI3 (HSPI) at 4 MHz, chip-select GPIO35. GPIO35, GPIO36, and GPIO37 are also the octal PSRAM data pins, so the 8 MB PSRAM stays off while the LEDs are in use. The panel is SH8601 QSPI on SPI2, addressed as 536 by 240, and is drawn in strips from internal RAM. Brightness is register `0x51` at `kDisplayBrightness`. Touch is not started. Battery GPIO1 is not converted to a percentage.
 
 ## ESP-NOW
 

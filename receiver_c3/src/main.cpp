@@ -19,7 +19,7 @@ void setup() {
 
 void loop() {
     const uint32_t now = millis();
-    espnow::poll(now);
     uart_bridge::poll(now);
+    espnow::poll(now);
     yield();
 }

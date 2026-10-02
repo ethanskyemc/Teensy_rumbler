@@ -8,6 +8,7 @@
 #include <esp_now.h>
 #include <esp_random.h>
 #include <esp_wifi.h>
+#include <freertos/queue.h>
 #include <string.h>
 
 namespace wireless {
@@ -25,6 +26,86 @@ volatile bool send_failed_ = false;
 uint32_t last_delivery_log_ms_ = 0;
 bool status_pending_ = false;
 siren::StatusPacket pending_status_ = {};
+uint32_t last_status_ms_ = 0;
+bool have_status_seq_ = false;
+uint8_t status_epoch_ = 0;
+uint16_t status_sequence_ = 0;
+QueueHandle_t status_queue_ = nullptr;
+
+constexpr uint8_t kStatusDepth = 4;
+
+struct RadioSlot {
+    uint8_t len;
+    uint8_t data[siren::kMaxFrameBytes];
+};
+
+void onRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
+    (void)info;
+    if (status_queue_ == nullptr || data == nullptr || len <= 0 ||
+        static_cast<size_t>(len) > siren::kMaxFrameBytes) {
+        return;
+    }
+    RadioSlot slot = {};
+    slot.len = static_cast<uint8_t>(len);
+    memcpy(slot.data, data, slot.len);
+    xQueueSend(status_queue_, &slot, 0);
+}
+
+bool acceptStatus(const siren::StatusPacket& status) {
+    if (!siren::statusFieldsValid(status)) {
+        return false;
+    }
+    if (!have_status_seq_ || status.epoch != status_epoch_) {
+        have_status_seq_ = true;
+        status_epoch_ = status.epoch;
+        status_sequence_ = status.status_sequence;
+        return true;
+    }
+    if (!siren::sequenceIsNewer(status.status_sequence, status_sequence_)) {
+        return false;
+    }
+    status_sequence_ = status.status_sequence;
+    return true;
+}
+
+void ingestStatus(const uint8_t* frame, uint8_t len, uint32_t now_ms) {
+    siren::FrameParser parser;
+    bool got = false;
+    siren::PacketType type = siren::PacketType::COMMAND;
+    uint8_t payload[siren::kMaxPayload] = {};
+    uint8_t payload_len = 0;
+    for (uint8_t i = 0; i < len; ++i) {
+        if (!parser.push(frame[i], now_ms)) {
+            continue;
+        }
+        got = true;
+        type = parser.type();
+        payload_len = parser.payloadLength();
+        memcpy(payload, parser.payload(), payload_len);
+    }
+    if (!got || type != siren::PacketType::STATUS) {
+        if (got) {
+            SIREN_LOG("wireless: ignored type %u\n", static_cast<unsigned>(type));
+        }
+        return;
+    }
+    siren::StatusPacket status = {};
+    if (!siren::deserializeStatus(payload, payload_len, status) || !acceptStatus(status)) {
+        return;
+    }
+    pending_status_ = status;
+    status_pending_ = true;
+    last_status_ms_ = now_ms;
+    SIREN_LOG_VERBOSE("wireless: status %s playing=%u seq=%u\n", siren::soundName(status.sound),
+                      status.playing ? 1u : 0u, status.status_sequence);
+}
+
+void drainStatus(uint32_t now_ms) {
+    RadioSlot slot = {};
+    while (status_queue_ != nullptr && xQueueReceive(status_queue_, &slot, 0) == pdTRUE) {
+        ingestStatus(slot.data, slot.len, now_ms);
+    }
+}
 
 void logMac(const char* label, const uint8_t mac[6]) {
     SIREN_LOG("%s %02X:%02X:%02X:%02X:%02X:%02X\n", label, mac[0], mac[1], mac[2], mac[3], mac[4],
@@ -66,6 +147,10 @@ void begin() {
     heartbeat_fail_logged_ = false;
     send_failed_ = false;
     status_pending_ = false;
+    last_status_ms_ = 0;
+    have_status_seq_ = false;
+    status_epoch_ = 0;
+    status_sequence_ = 0;
     next_heartbeat_ms_ = 0;
 
     WiFi.mode(WIFI_STA);
@@ -78,13 +163,22 @@ void begin() {
         return;
     }
     radio_ready_ = true;
+    status_queue_ = xQueueCreate(kStatusDepth, sizeof(RadioSlot));
+    if (status_queue_ == nullptr) {
+        SIREN_LOG("wireless: status queue failed\n");
+    } else if (esp_now_register_recv_cb(onRecv) != ESP_OK) {
+        SIREN_LOG("wireless: recv callback failed\n");
+    }
     if (esp_now_register_send_cb(onSend) != ESP_OK) {
         SIREN_LOG("wireless: send callback failed\n");
     }
 
     uint8_t own_mac[6] = {};
-    WiFi.macAddress(own_mac);
-    logMac("wireless: local mac", own_mac);
+    if (esp_wifi_get_mac(WIFI_IF_STA, own_mac) != ESP_OK) {
+        SIREN_LOG("wireless: sta mac read failed\n");
+    } else {
+        logMac("wireless: local mac", own_mac);
+    }
 
     broadcast_ = siren::macIsUnset(cfg::kPeerMac);
     const uint8_t* dest = broadcast_ ? siren::kEspNowBroadcastMac : cfg::kPeerMac;
@@ -104,6 +198,7 @@ void begin() {
 }
 
 void update(uint32_t now_ms) {
+    drainStatus(now_ms);
     if (send_failed_) {
         send_failed_ = false;
         if (last_delivery_log_ms_ == 0 ||
@@ -124,7 +219,8 @@ void update(uint32_t now_ms) {
 }
 
 bool linkUp() {
-    return false;
+    return last_status_ms_ != 0 &&
+           !siren::elapsedMs(millis(), last_status_ms_, siren::kLinkTimeoutMs);
 }
 
 uint8_t localEpoch() {

@@ -14,6 +14,45 @@ uint16_t status_sequence_ = 1;
 uint32_t last_rx_ms_ = 0;
 siren::LinkGuard link_ = {};
 siren::FrameParser parser_;
+bool have_snapshot_ = false;
+siren::StatusPacket snapshot_ = {};
+
+bool audioChanged(const siren::StatusPacket& now) {
+    if (!have_snapshot_) {
+        return false;
+    }
+    return now.sound != snapshot_.sound || now.playing != snapshot_.playing ||
+           now.rumbler_enabled != snapshot_.rumbler_enabled ||
+           now.volume_master != snapshot_.volume_master || now.volume_siren != snapshot_.volume_siren ||
+           now.volume_rumbler != snapshot_.volume_rumbler || now.teensy != snapshot_.teensy ||
+           now.sd != snapshot_.sd || now.flags != snapshot_.flags;
+}
+
+bool publishStatus(bool quiet) {
+    siren::StatusPacket status = {};
+    if (!fillStatus(status)) {
+        return false;
+    }
+    uint8_t frame[siren::kMaxFrameBytes];
+    const size_t n = siren::buildStatusFrame(status, frame, sizeof(frame));
+    if (n == 0 || Serial1.write(frame, n) != n) {
+        if (!quiet) {
+            SIREN_LOG("commands: status write failed\n");
+        }
+        return false;
+    }
+    snapshot_ = status;
+    have_snapshot_ = true;
+    status_sequence_ = siren::nextSequence(status_sequence_);
+    if (quiet) {
+        SIREN_LOG_VERBOSE("commands: status seq=%u\n", status.status_sequence);
+        return true;
+    }
+    SIREN_LOG("commands: status %s playing=%u rumbler=%u vol=%u ack=%u\n",
+              siren::soundName(status.sound), status.playing ? 1u : 0u,
+              status.rumbler_enabled ? 1u : 0u, status.volume_master, status.ack_sequence);
+    return true;
+}
 
 void applyCommand(const siren::CommandPacket& cmd) {
     switch (cmd.command) {
@@ -80,6 +119,7 @@ void handleFrame(uint32_t now_ms) {
     }
     last_rx_ms_ = now_ms;
     applyCommand(cmd);
+    publishStatus(cmd.command == siren::CommandType::HEARTBEAT);
 }
 
 }  // namespace
@@ -94,6 +134,8 @@ void begin() {
     last_rx_ms_ = 0;
     link_ = {};
     parser_.reset();
+    have_snapshot_ = false;
+    snapshot_ = {};
 
     // Pins 0 and 1 are Teensy 4.0 Serial1. Set them explicitly so the UART
     // cannot move to an alternate pad.
@@ -131,6 +173,11 @@ void poll(uint32_t now_ms) {
         last_rx_ms_ = now_ms;
         SIREN_LOG("commands: uart timeout, STOP\n");
     }
+
+    siren::StatusPacket now = {};
+    if (fillStatus(now) && audioChanged(now)) {
+        publishStatus(false);
+    }
 }
 
 bool fillStatus(siren::StatusPacket& out) {
@@ -149,8 +196,8 @@ bool fillStatus(siren::StatusPacket& out) {
     if (out.teensy == siren::TeensyStatus::READY) {
         out.flags = static_cast<uint8_t>(out.flags | siren::STATUS_FLAG_AUDIO_READY);
     }
-    out.remote_epoch = 0;
-    out.ack_sequence = 0;
+    out.remote_epoch = link_.heartbeat_seen ? link_.epoch : 0;
+    out.ack_sequence = link_.heartbeat_seen ? link_.last_sequence : 0;
     out.status_sequence = status_sequence_;
     return siren::statusFieldsValid(out);
 }
